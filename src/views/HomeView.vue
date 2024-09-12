@@ -19,26 +19,25 @@
           <i class="el-icon-s-custom"></i>
           GPT Answer
         </div>
-        <LoadingIcon v-show="show_ai_thinking_effect"/>
+        <LoadingIcon v-show="show_ai_thinking_effect" />
         <div class="ai_result_content">{{ ai_result }}</div>
         <div class="single_part_bottom_bar">
           <el-button icon="el-icon-thumb" @click="askCurrentText" :disabled="!isGetGPTAnswerAvailable">
             Ask GPT
           </el-button>
+          <el-button @click="clearAnswer">
+            Clear Answer
+          </el-button>
         </div>
       </div>
     </div>
     <div class="title_function_bar">
-      <el-button
-          type="success"
-          @click="startCopilot" v-show="state==='end'" :loading="copilot_starting"
-          :disabled="copilot_starting">Start Copilot
+      <el-button type="success" @click="startCopilot" v-show="state === 'end'" :loading="copilot_starting"
+        :disabled="copilot_starting">Start Copilot
       </el-button>
-      <el-button
-          :loading="copilot_stopping"
-          @click="userStopCopilot" v-show="state==='ing'">Stop Copilot
+      <el-button :loading="copilot_stopping" @click="userStopCopilot" v-show="state === 'ing'">Stop Copilot
       </el-button>
-      <MyTimer ref="MyTimer"/>
+      <MyTimer ref="MyTimer" />
     </div>
 
   </div>
@@ -65,7 +64,7 @@ export default {
 
     }
   },
-  components: {LoadingIcon, MyTimer},
+  components: { LoadingIcon, MyTimer },
   data() {
     return {
       currentText: "",
@@ -75,6 +74,9 @@ export default {
       copilot_stopping: false,
       show_ai_thinking_effect: false,
       popStyle: {},
+      record: null,
+      socket: null,
+      timeInte: null,
     }
   },
   async mounted() {
@@ -82,28 +84,60 @@ export default {
     if (this.isDevMode) {
       // this.currentText = demo_text
     }
+    var that = this
+    navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia;
+    if (!navigator.getUserMedia) {
+      alert('Your browser does not support audio input');
+    } else {
+      navigator.getUserMedia(
+        { audio: true },
+        function (mediaStream) {
+          that.updateRecord(new Recorder(mediaStream));
+          // this.record = new Recorder(mediaStream);
+          // init(new Recorder(mediaStream));
+        },
+        function (error) {
+          console.log(error);
+        }
+      );
+    }
   },
   beforeDestroy() {
   },
   methods: {
+    clearAnswer() {
+      this.ai_result = ""
+    },
+    updateRecord(rec) {
+      this.record = rec;
+    },
     async askCurrentText() {
       const apiKey = localStorage.getItem("openai_key")
+      // this.show_ai_thinking_effect = true
+      const model = config_util.gpt_model()
       let content = this.currentText
       this.ai_result = ""
       this.show_ai_thinking_effect = true
-      const model = config_util.gpt_model()
-      const gpt_system_prompt = config_util.gpt_system_prompt()
-      content = gpt_system_prompt + "\n" + content
+      // const model = "qwen2:7b"
+      const model_prompt = config_util.gpt_system_prompt()
+      content = model_prompt + "\n" + content
 
       try {
         if (!apiKey) {
           throw new Error("You should setup an Open AI Key!")
         }
-
-        const openai = new OpenAI({apiKey: apiKey, dangerouslyAllowBrowser: true})
+        const config = {
+          apiKey: apiKey,
+          dangerouslyAllowBrowser: true
+        }
+        if (apiKey === "ollama") {
+          config['baseURL'] = 'http://localhost:11434/v1/'
+        }
+        console.log("config", config)
+        const openai = new OpenAI(config)
         const stream = await openai.chat.completions.create({
           model: model,
-          messages: [{role: "user", content: content}],
+          messages: [{ role: "user", content: content }],
           stream: true,
         });
         this.show_ai_thinking_effect = false
@@ -117,73 +151,76 @@ export default {
         this.ai_result = "" + e
       }
     },
+    async initWebSocket() {
+      var queryParams = [];
+      queryParams.push('lang=zh-CN');
+      // if (sv) {
+      //   queryParams.push('sv=1');
+      // }
+      var queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+      this.socket = new WebSocket(`http://127.0.0.1:443/ws/transcribe${queryString}`);
+      this.socket.binaryType = 'arraybuffer';
+
+      var that = this
+      this.socket.onopen = function (event) {
+        console.log('WebSocket connection established');
+        that.record.start();
+        that.timeInte = setInterval(function () {
+          if (that.socket.readyState === 1) {
+            var audioBlob = that.record.getBlob();
+            console.log('Blob size: ', audioBlob.size);
+
+            // Read the Blob content for debugging
+            var reader = new FileReader();
+            reader.onloadend = function () {
+              // console.log('Blob content: ', new Uint8Array(reader.result));
+              that.socket.send(audioBlob);
+              console.log('Sending audio data');
+              that.record.clear();
+            };
+            reader.readAsArrayBuffer(audioBlob);
+          }
+        }, 500);
+      };
+
+      this.socket.onmessage = function (evt) {
+        console.log('Received message: ' + evt.data);
+        try {
+          var resJson = JSON.parse(evt.data)
+          var jsonResponse = JSON.stringify(resJson, null, 4);
+          // debugger;
+          that.currentText = that.currentText + "\n" + (resJson.data || 'No speech recognized');
+        } catch (e) {
+          console.error('Failed to parse response data', e);
+          that.currentText = that.currentText + "\n" + evt.data;
+          // transcriptionResult.textContent += "\n" + evt.data;
+        }
+      };
+
+      this.socket.onclose = function () {
+        console.log('WebSocket connection closed');
+      };
+
+      this.socket.onerror = function (error) {
+        console.error('WebSocket error: ' + error);
+      };
+    },
     clearASRContent() {
       this.currentText = ""
     },
     async startCopilot() {
-      this.copilot_starting = true
-      const token = localStorage.getItem("azure_token")
-      const region = config_util.azure_region()
-      const language = config_util.azure_language()
-      const openai_key = localStorage.getItem("openai_key")
-      console.log({region, language})
-      try {
-        if (!openai_key) {
-          throw new Error("You should setup Open AI API Token")
-        }
-        if (!token) {
-          throw new Error("You should setup Azure token")
-        }
-        if (!region) {
-          throw new Error("You should setup Azure region")
-        }
-
-        const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(token, region);
-        speechConfig.speechRecognitionLanguage = language;
-        const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
-        this.recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
-      } catch (e) {
-        this.currentText = e
-        this.copilot_starting = false
-        return
-      }
-
-      const recognizer = this.recognizer
-      const sdk = SpeechSDK
-
-
-      recognizer.recognized = (sender, event) => {
-        if (sdk.ResultReason.RecognizedSpeech === event.result.reason && event.result.text.length > 0) {
-          const text = event.result.text
-          this.currentText = this.currentText + "\n" + text
-        } else if (sdk.ResultReason.NoMatch === event.result.reason) {
-          console.log("Speech could not be recognized")
-        }
-      };
-
-      recognizer.startContinuousRecognitionAsync(
-          () => {
-            this.copilot_starting = false
-            this.state = "ing"
-            this.$refs.MyTimer.start()
-            window.console.log("recognition started");
-          },
-          (err) => {
-            this.copilot_starting = false
-            this.currentText = "Start Failed:" + err
-            window.console.error("recogniton start failed", err);
-          })
+      await this.initWebSocket()
+      this.state = "ing"
     },
     userStopCopilot() {
-      this.copilot_stopping = true
-      this.recognizer.stopContinuousRecognitionAsync(() => {
-        console.log("stoped")
-        this.copilot_stopping = false
-        this.state = "end"
-        this.$refs.MyTimer.stop()
-      }, (err) => {
-        console.log("err:", err)
-      })
+      // console.log('try to close WebSocket connection');
+      if (this.socket) {
+        // console.log('Closing WebSocket connection');
+        this.socket.close();
+        this.record.stop();
+        clearInterval(this.timeInte);
+      }
+      this.state = "end"
     }
   }
 }
@@ -205,12 +242,96 @@ async function sleep(ms) {
   return new Promise((resolve => setTimeout(resolve, ms)))
 }
 
+var Recorder = function (stream) {
+  var sampleBits = 16; // Sample bits
+  var inputSampleRate = 48000; // Input sample rate
+  var outputSampleRate = 16000; // Output sample rate
+  var channelCount = 1; // Single channel
+  var context = new AudioContext();
+  var audioInput = context.createMediaStreamSource(stream);
+  var recorder = context.createScriptProcessor(4096, channelCount, channelCount);
+  var audioData = {
+    size: 0,
+    buffer: [],
+    inputSampleRate: inputSampleRate,
+    inputSampleBits: sampleBits,
+    clear: function () {
+      this.buffer = [];
+      this.size = 0;
+    },
+    input: function (data) {
+      this.buffer.push(new Float32Array(data));
+      this.size += data.length;
+    },
+    encodePCM: function () {
+      var bytes = new Float32Array(this.size);
+      var offset = 0;
+      for (var i = 0; i < this.buffer.length; i++) {
+        bytes.set(this.buffer[i], offset);
+        offset += this.buffer[i].length;
+      }
+      var dataLength = bytes.length * (sampleBits / 8);
+      var buffer = new ArrayBuffer(dataLength);
+      var data = new DataView(buffer);
+      offset = 0;
+      for (var i = 0; i < bytes.length; i++, offset += 2) {
+        var s = Math.max(-1, Math.min(1, bytes[i]));
+        data.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+      return new Blob([data], { type: 'audio/pcm' });
+    }
+  };
 
+  this.start = function () {
+    audioInput.connect(recorder);
+    recorder.connect(context.destination);
+  };
+
+  this.stop = function () {
+    recorder.disconnect();
+  };
+
+  this.getBlob = function () {
+    return audioData.encodePCM();
+  };
+
+  this.clear = function () {
+    audioData.clear();
+  };
+
+  function downsampleBuffer(buffer, inputSampleRate, outputSampleRate) {
+    if (outputSampleRate === inputSampleRate) {
+      return buffer;
+    }
+    var sampleRateRatio = inputSampleRate / outputSampleRate;
+    var newLength = Math.round(buffer.length / sampleRateRatio);
+    var result = new Float32Array(newLength);
+    var offsetResult = 0;
+    var offsetBuffer = 0;
+    while (offsetResult < result.length) {
+      var nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+      var accum = 0, count = 0;
+      for (var i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+        accum += buffer[i];
+        count++;
+      }
+      result[offsetResult] = accum / count;
+      offsetResult++;
+      offsetBuffer = nextOffsetBuffer;
+    }
+    return result;
+  }
+
+  recorder.onaudioprocess = function (e) {
+    // console.log('onaudioprocess called');
+    var resampledData = downsampleBuffer(e.inputBuffer.getChannelData(0), inputSampleRate, outputSampleRate);
+    audioData.input(resampledData);
+  };
+};
 </script>
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped>
-
 .homeview_container {
   display: flex;
   flex-direction: column;
@@ -229,9 +350,12 @@ async function sleep(ms) {
 }
 
 .box {
-  flex: 1; /* 设置flex属性为1，使两个div平分父容器的宽度 */
-  border: 1px lightgray solid; /* 为了演示，添加边框样式 */
-  padding: 10px; /* 为了演示，添加内边距 */
+  flex: 1;
+  /* 设置flex属性为1，使两个div平分父容器的宽度 */
+  border: 1px lightgray solid;
+  /* 为了演示，添加边框样式 */
+  padding: 10px;
+  /* 为了演示，添加内边距 */
   white-space: pre-wrap;
   display: flex;
   flex-direction: column;
@@ -251,7 +375,7 @@ async function sleep(ms) {
   display: flex;
 }
 
-.single_part_bottom_bar > .el-button {
+.single_part_bottom_bar>.el-button {
   flex-grow: 1;
 }
 
@@ -278,5 +402,4 @@ async function sleep(ms) {
   color: red;
   text-align: center;
 }
-
 </style>
