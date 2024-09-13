@@ -133,6 +133,9 @@ export default {
         if (apiKey === "ollama") {
           config['baseURL'] = 'http://localhost:11434/v1/'
         }
+        if(model==="glm-4-flash"){
+          config['baseURL'] = 'https://open.bigmodel.cn/api/paas/v4/'
+        }
         console.log("config", config)
         const openai = new OpenAI(config)
         const stream = await openai.chat.completions.create({

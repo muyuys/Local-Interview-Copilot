@@ -23,6 +23,7 @@
         <el-radio label="gpt-3.5-turbo"></el-radio>
         <el-radio label="gpt-4"></el-radio>
         <el-radio label="qwen2:7b"></el-radio>
+        <el-radio label="glm-4-flash"></el-radio>
       </el-radio-group>
     </div>
 
