@@ -16,13 +16,19 @@
         <template slot="prepend">API Key:</template>
       </el-input>
     </div>
+    <div class="separator"></div>
+    <div>
+      <el-input placeholder="http://localhost/" v-model="big_model_url" @change="onKeyChange('big_model_url')">
+        <template slot="prepend">API URL:</template>
+      </el-input>
+    </div>
 
     <div class="separator">
       GPT Model:
       <el-radio-group v-model="gpt_model" @change="onKeyChange('gpt_model')">
         <el-radio label="gpt-3.5-turbo"></el-radio>
         <el-radio label="gpt-4"></el-radio>
-        <el-radio label="qwen2:7b"></el-radio>
+        <el-radio label="qwen2:7b(ollama)"></el-radio>
         <el-radio label="glm-4-flash"></el-radio>
       </el-radio-group>
     </div>
@@ -39,6 +45,15 @@
       We use Microsoft Azure's speech recognition service. You can apply for a free Azure token by referring to <a
         :href="azure_application_url" target="_blank">this tutorial</a>:
     </div>
+    <div class="separator">
+      ASR Model:
+      <el-radio-group v-model="asr_model" @change="onKeyChange('asr_model')">
+        <el-radio label="azure"></el-radio>
+        <el-radio label="funasr"></el-radio>
+        <el-radio label="senseVoice"></el-radio>
+      </el-radio-group>
+    </div>
+    <div class="separator"></div>
     <el-input placeholder="Input Your Azure Speech Resource Token (KEY 1)" v-model="azure_token"
               @change="onKeyChange('azure_token')">
       <template slot="prepend">Azure token:</template>
@@ -74,8 +89,10 @@ export default {
   data() {
     return {
       openai_key: "",
+      big_model_url: "",
       gpt_model: "gpt-3.5-turbo",
       gpt_system_prompt: "",
+      asr_model: "senseVoice",
       azure_token: "",
       azure_region: "",
       azure_language: "",
@@ -87,6 +104,7 @@ export default {
   },
   mounted() {
     this.openai_key = localStorage.getItem("openai_key")
+    this.big_model_url = localStorage.getItem("big_model_url")
     this.gpt_system_prompt = config_util.gpt_system_prompt()
     this.gpt_model = config_util.gpt_model()
     this.azure_token = localStorage.getItem("azure_token")

@@ -1,0 +1,10 @@
+{
+    "api": {
+        "FUNASR_DOCKER_WEBSOCKET_URL": "wss://127.0.0.1:10096",
+        "SENSEVOICE_URL":"http://127.0.0.1:27000/ws/transcribe",
+        "ZHIPU_API_KEY":"your_key",
+        "ZHIPU_API_URL":"https://open.bigmodel.cn/api/paas/v4/",
+        "OLLAMA_API_KET":"ollama",
+        "OLLAMA_API_URL":"http://localhost:11434/v1/"
+    }
+}

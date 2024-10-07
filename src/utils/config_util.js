@@ -17,9 +17,14 @@ function gpt_model() {
     return localStorage.getItem("gpt_model") || "gpt-3.5-turbo"
 }
 
+function asr_model() {
+    return localStorage.getItem("asr_model") || "senseVoice"
+}
+
 export default {
     gpt_system_prompt,
     azure_language,
     azure_region,
-    gpt_model
+    gpt_model,
+    asr_model
 }
